@@ -57,8 +57,8 @@ def create_sunspot_animation(df, cycle_peaks):
     line, = ax.plot([], [], color=cmap(0.8), linewidth=3.5, alpha=0.9, 
                     label='Sunspot Activity', zorder=5, solid_capstyle='round')
     
-    # Initialize the filled area
-    fill = ax.fill_between([], [], [], color=cmap(0.5), alpha=0.3, zorder=4)
+    # Initialize the filled area - store reference for later updates
+    fill_collections = []
     
     # Add cycle text
     cycle_text = ax.text(0.02, 0.96, '', transform=ax.transAxes, 
@@ -101,59 +101,95 @@ def create_sunspot_animation(df, cycle_peaks):
     
     # Animation update function
     def update(frame):
-        current_idx = min(frame * 3, len(df)-1)  # Advance 3 months per frame
+        # Reduce data processing - advance by larger steps for faster animation
+        current_idx = min(frame * 12, len(df)-1)  # Advance 12 months per frame (faster)
         current_data = df.iloc[:current_idx+1]
+        
+        # Limit data points to avoid performance issues
+        if len(current_data) > 1000:
+            step = len(current_data) // 1000
+            current_data = current_data.iloc[::step]
+        
         x_data = current_data['date']
         y_data = current_data['sunspot_area']
         
         # Update the main curve
         line.set_data(x_data, y_data)
         
-        # Update the filled area - using a simple method
-        # Clear old fills
-        for collection in ax.collections:
-            if collection != fill:  # Keep other collections (if any)
-                collection.remove()
+        # Clear and recreate fill areas less frequently to avoid errors
+        if frame % 20 == 0 and len(x_data) > 0:  # Update fill area every 20 frames
+            # Clear all existing fill collections
+            for collection in fill_collections[:]:
+                try:
+                    collection.remove()
+                    fill_collections.remove(collection)
+                except:
+                    pass  # Ignore errors if collection already removed
+            
+            # Create new fill area
+            try:
+                new_fill = ax.fill_between(x_data, 0, y_data, color=cmap(0.5), alpha=0.3, zorder=4)
+                fill_collections.append(new_fill)
+            except Exception as e:
+                print(f"Fill area error (frame {frame}): {e}")
         
-        # Create new fills
-        ax.fill_between(x_data, 0, y_data, color=cmap(0.5), alpha=0.3, zorder=4)
-        
-        # Update text
-        current_cycle = current_data['cycle'].iloc[-1] if not pd.isna(current_data['cycle'].iloc[-1]) else 'Unknown'
-        cycle_text.set_text(f'Current Solar Cycle: {int(current_cycle) if current_cycle != "Unknown" else current_cycle}')
-        
-        current_date = current_data['date'].iloc[-1]
-        date_text.set_text(f'{current_date.strftime("%Y %B")}\nActivity Level: {y_data.iloc[-1]:.1f}')
-        
-        # Dynamically change line color based on the current value
-        norm_value = y_data.iloc[-1] / y_max
-        line.set_color(cmap(norm_value))
+        # Update text less frequently for better performance
+        if frame % 5 == 0 and len(current_data) > 0:
+            current_cycle = current_data['cycle'].iloc[-1] if not pd.isna(current_data['cycle'].iloc[-1]) else 'Unknown'
+            cycle_text.set_text(f'Current Solar Cycle: {int(current_cycle) if current_cycle != "Unknown" else current_cycle}')
+            
+            current_date = current_data['date'].iloc[-1]
+            date_text.set_text(f'{current_date.strftime("%Y %B")}\nActivity Level: {y_data.iloc[-1]:.1f}')
+            
+            # Dynamically change line color based on the current value
+            norm_value = y_data.iloc[-1] / y_max
+            line.set_color(cmap(norm_value))
         
         return line, cycle_text, date_text
     
-    # Create animation - disable blit to avoid compatibility issues
-    frames = len(df) // 3
+    # Create animation with fewer frames for faster processing
+    max_frames = min(200, len(df) // 12)  # Limit total frames to 200
     anim = animation.FuncAnimation(
-        fig, update, frames=frames, interval=100,
-        blit=False, repeat=True  # Disable blit
+        fig, update, frames=max_frames, interval=150,  # Slower interval for smoother playback
+        blit=False, repeat=True
     )
+    
+    print(f"Animation created with {max_frames} frames. This may take a moment to display...")
     
     plt.tight_layout()
     
-    # Save the animation
-    try:
-        anim.save('solar_art.gif', writer='pillow', dpi=100, fps=10, 
-                  savefig_kwargs={'facecolor': '#000011'})
-        print("Artistic visualization saved as: solar_art.gif")
-    except Exception as e:
-        print(f"Failed to save animation: {e}")
+    # Ask user if they want to save the animation (can be very slow)
+    print("\nNote: Saving the animation as GIF can take several minutes.")
+    print("The animation will display first. Close the window to continue.")
     
+    # Show the animation first (faster than saving)
     plt.show()
+    
+    # Save the animation as GIF
+    try:
+        print("Saving animation as GIF... This may take several minutes...")
+        print("Please be patient - creating high-quality animated GIF with 200 frames...")
+        anim.save('solar_art.gif', writer='pillow', dpi=80, fps=8, 
+                  savefig_kwargs={'facecolor': '#000011'})
+        print("✓ Artistic visualization saved as: solar_art.gif")
+    except Exception as e:
+        print(f"✗ Failed to save animation: {e}")
+        print("You may need to install Pillow: pip install Pillow")
 
 # --------------------------
 # Main Execution Logic
 # --------------------------
 if __name__ == "__main__":
+    print("Starting sunspot visualization...")
+    
+    print("Step 1: Fetching data...")
     sunspot_df = fetch_sunspot_data()
+    print(f"Data fetched successfully. Shape: {sunspot_df.shape}")
+    
+    print("Step 2: Preprocessing data...")
     processed_df, cycle_peaks = preprocess_data(sunspot_df)
+    print(f"Data preprocessed successfully. Cycles found: {len(cycle_peaks)}")
+    
+    print("Step 3: Creating animation (this may take 30-60 seconds)...")
     create_sunspot_animation(processed_df, cycle_peaks)
+    print("Visualization complete!")

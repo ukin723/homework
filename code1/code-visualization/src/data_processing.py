@@ -6,8 +6,9 @@ from io import StringIO
 def fetch_sunspot_data():
     """从SILSO获取太阳黑子数据（替代数据源）"""
     try:
+        print("Fetching sunspot data from SILSO... (this may take 10-15 seconds)")
         url = "http://www.sidc.be/silso/DATA/SN_m_tot_V2.0.csv"
-        response = requests.get(url, timeout=10)
+        response = requests.get(url, timeout=15)  # Reduced timeout to 15 seconds
         response.raise_for_status()
         
         data = response.text
